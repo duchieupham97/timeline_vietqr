@@ -41,38 +41,67 @@ function createOverviewSheet() {
   
   // ============================================================
   // SECTION 2: KPI CARDS (Row 4-5) - Mỗi card 3 cột
+  // Merge TỪNG HÀNG RIÊNG: hàng 4 = title, hàng 5 = value
   // ============================================================
   
-  sheet.setRowHeight(4, 30);
-  sheet.setRowHeight(5, 50);
+  sheet.setRowHeight(4, 28);
+  sheet.setRowHeight(5, 45);
   
-  // Card 1: Tổng Task (A4:C5)
-  createKPICard(sheet, "A4:C5", "📋 TỔNG TASK", "A5", 
-    '=COUNTIF(\'Task List\'!G3:G500;"<>")', "#e3f2fd", "#1565c0");
+  // Card 1: Tổng Task (A4:C4 title, A5:C5 value)
+  sheet.getRange("A4:C4").merge().setValue("📋 TỔNG TASK")
+    .setBackground("#e3f2fd").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("A5:C5").merge().setBackground("#e3f2fd");
+  setF(sheet, "A5", '=COUNTIF(\'Task List\'!G3:G500;"<>")');
+  sheet.getRange("A5").setFontSize(26).setFontWeight("bold").setFontColor("#1565c0").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("A4:C5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 2: Hoàn thành (D4:F5)
-  createKPICard(sheet, "D4:F5", "✅ HOÀN THÀNH", "D5",
-    '=COUNTIF(\'Task List\'!G3:G500;"Finished")+COUNTIF(\'Task List\'!G3:G500;"Closed")', "#e8f5e9", "#2e7d32");
+  // Card 2: Hoàn thành (D4:F4 title, D5:F5 value)
+  sheet.getRange("D4:F4").merge().setValue("✅ HOÀN THÀNH")
+    .setBackground("#e8f5e9").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("D5:F5").merge().setBackground("#e8f5e9");
+  setF(sheet, "D5", '=COUNTIF(\'Task List\'!G3:G500;"Finished")+COUNTIF(\'Task List\'!G3:G500;"Closed")');
+  sheet.getRange("D5").setFontSize(26).setFontWeight("bold").setFontColor("#2e7d32").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("D4:F5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 3: Đang làm (G4:I5)
-  createKPICard(sheet, "G4:I5", "🔄 ĐANG LÀM", "G5",
-    '=COUNTIF(\'Task List\'!G3:G500;"In Progress")', "#fff3e0", "#ef6c00");
+  // Card 3: Đang làm (G4:I4 title, G5:I5 value)
+  sheet.getRange("G4:I4").merge().setValue("🔄 ĐANG LÀM")
+    .setBackground("#fff3e0").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("G5:I5").merge().setBackground("#fff3e0");
+  setF(sheet, "G5", '=COUNTIF(\'Task List\'!G3:G500;"In Progress")');
+  sheet.getRange("G5").setFontSize(26).setFontWeight("bold").setFontColor("#ef6c00").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("G4:I5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 4: Testing (J4:L5)
-  createKPICard(sheet, "J4:L5", "🧪 TESTING", "J5",
-    '=COUNTIF(\'Task List\'!G3:G500;"Testing")', "#f3e5f5", "#7b1fa2");
+  // Card 4: Testing (J4:L4 title, J5:L5 value)
+  sheet.getRange("J4:L4").merge().setValue("🧪 TESTING")
+    .setBackground("#f3e5f5").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("J5:L5").merge().setBackground("#f3e5f5");
+  setF(sheet, "J5", '=COUNTIF(\'Task List\'!G3:G500;"Testing")');
+  sheet.getRange("J5").setFontSize(26).setFontWeight("bold").setFontColor("#7b1fa2").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("J4:L5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 5: Chờ xử lý (M4:O5)
-  createKPICard(sheet, "M4:O5", "⏳ CHỜ XỬ LÝ", "M5",
-    '=COUNTIF(\'Task List\'!G3:G500;"Open")+COUNTIF(\'Task List\'!G3:G500;"Pending")', "#fce4ec", "#c2185b");
+  // Card 5: Chờ xử lý (M4:O4 title, M5:O5 value)
+  sheet.getRange("M4:O4").merge().setValue("⏳ CHỜ XỬ LÝ")
+    .setBackground("#fce4ec").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("M5:O5").merge().setBackground("#fce4ec");
+  setF(sheet, "M5", '=COUNTIF(\'Task List\'!G3:G500;"Open")+COUNTIF(\'Task List\'!G3:G500;"Pending")');
+  sheet.getRange("M5").setFontSize(26).setFontWeight("bold").setFontColor("#c2185b").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("M4:O5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 6: Urgent (P4:R5)
-  createKPICard(sheet, "P4:R5", "🚨 URGENT", "P5",
-    '=COUNTIFS(\'Task List\'!F3:F500;"Urgent";\'Task List\'!G3:G500;"<>Finished";\'Task List\'!G3:G500;"<>Closed")', "#ffebee", "#c62828");
+  // Card 6: Urgent (P4:R4 title, P5:R5 value)
+  sheet.getRange("P4:R4").merge().setValue("🚨 URGENT")
+    .setBackground("#ffebee").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("P5:R5").merge().setBackground("#ffebee");
+  setF(sheet, "P5", '=COUNTIFS(\'Task List\'!F3:F500;"Urgent";\'Task List\'!G3:G500;"<>Finished";\'Task List\'!G3:G500;"<>Closed")');
+  sheet.getRange("P5").setFontSize(26).setFontWeight("bold").setFontColor("#c62828").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("P4:R5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
-  // Card 7: % Hoàn thành (S4:U5)
-  createKPICard(sheet, "S4:U5", "📈 TIẾN ĐỘ", "S5",
-    '=IFERROR(D5/A5;0)', "#e0f7fa", "#00838f", true);
+  // Card 7: % Hoàn thành (S4:U4 title, S5:U5 value)
+  sheet.getRange("S4:U4").merge().setValue("📈 TIẾN ĐỘ")
+    .setBackground("#e0f7fa").setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("S5:U5").merge().setBackground("#e0f7fa");
+  setF(sheet, "S5", '=IFERROR(D5/A5;0)');
+  sheet.getRange("S5").setFontSize(26).setFontWeight("bold").setFontColor("#00838f").setHorizontalAlignment("center").setVerticalAlignment("middle").setNumberFormat("0%");
+  sheet.getRange("S4:U5").setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
   
   // ============================================================
   // SECTION 3: ALERT BOX (Row 7-8)
@@ -425,25 +454,6 @@ function createOverviewSheet() {
   }
   
   SpreadsheetApp.getUi().alert('✅ Tạo Overview Premium V2 thành công!\n\n📊 Giao diện đẹp + Merge cells\n🔄 Dữ liệu realtime\n📈 3 biểu đồ\n⚠️ Cảnh báo tự động\n🏆 Top Performers');
-}
-
-/**
- * Tạo KPI Card với merge cells
- */
-function createKPICard(sheet, range, title, valueCell, formula, bgColor, textColor, isPercent) {
-  const cells = sheet.getRange(range);
-  cells.merge().setBorder(true, true, true, true, null, null, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
-  cells.setBackground(bgColor);
-  
-  const titleCell = range.split(":")[0];
-  sheet.getRange(titleCell).setValue(title).setFontSize(10).setFontColor("#616161").setHorizontalAlignment("center").setVerticalAlignment("top");
-  
-  setF(sheet, valueCell, formula);
-  sheet.getRange(valueCell).setFontSize(24).setFontWeight("bold").setFontColor(textColor).setHorizontalAlignment("center").setVerticalAlignment("bottom");
-  
-  if (isPercent) {
-    sheet.getRange(valueCell).setNumberFormat("0%");
-  }
 }
 
 /**
