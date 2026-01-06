@@ -261,8 +261,8 @@ function setupUpcomingDeadlines(sheet) {
   const taskIdCol = getColLetter(CONFIG.columns.taskId);
   
   // Header
-  sheet.getRange("E16").setValue("⏰ TASK SẮP/QUÁ HẾT HẠN").setFontSize(12).setFontWeight("bold");
-  sheet.getRange("E16:J16").merge().setBackground("#f57c00").setFontColor("white");
+  sheet.getRange("E16").setValue("⏰ TASK SẮP/QUÁ HẾT HẠN (trong 3 ngày)").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("E16:K16").merge().setBackground("#f57c00").setFontColor("white");
   
   // Table headers
   sheet.getRange("E17").setValue("FNo.");
@@ -270,16 +270,19 @@ function setupUpcomingDeadlines(sheet) {
   sheet.getRange("G17").setValue("Assignee");
   sheet.getRange("H17").setValue("Priority");
   sheet.getRange("I17").setValue("End Date");
-  sheet.getRange("J17").setValue("Status");
-  sheet.getRange("E17:J17").setFontWeight("bold").setBackground("#fff3e0");
+  sheet.getRange("J17").setValue("Còn lại");
+  sheet.getRange("K17").setValue("Status");
+  sheet.getRange("E17:K17").setFontWeight("bold").setBackground("#fff3e0");
   
-  // Filter - lọc task chưa xong và sắp hết hạn (End Date trong 7 ngày tới hoặc đã qua)
+  // Filter - sử dụng End Date để lọc task sắp hết hạn
+  // Remaining Time = End Date - NOW(), hiển thị hh:mm
+  // Lọc: End Date trong 3 ngày tới hoặc đã quá hạn, và chưa hoàn thành
   sheet.getRange("E18").setFormula(`=IFERROR(
     SORT(
       FILTER(
-        {'${tl}'!${taskIdCol}2:${taskIdCol},'${tl}'!${taskNameCol}2:${taskNameCol},'${tl}'!${assigneeCol}2:${assigneeCol},'${tl}'!${priorityCol}2:${priorityCol},'${tl}'!${endDateCol}2:${endDateCol},'${tl}'!${statusCol}2:${statusCol}},
+        {'${tl}'!${taskIdCol}2:${taskIdCol},'${tl}'!${taskNameCol}2:${taskNameCol},'${tl}'!${assigneeCol}2:${assigneeCol},'${tl}'!${priorityCol}2:${priorityCol},'${tl}'!${endDateCol}2:${endDateCol},'${tl}'!${remainingCol}2:${remainingCol},'${tl}'!${statusCol}2:${statusCol}},
         ('${tl}'!${endDateCol}2:${endDateCol}<>"")*
-        ('${tl}'!${endDateCol}2:${endDateCol}<=TODAY()+7)*
+        ('${tl}'!${endDateCol}2:${endDateCol}<=TODAY()+3)*
         ('${tl}'!${statusCol}2:${statusCol}<>"Finished")*
         ('${tl}'!${statusCol}2:${statusCol}<>"Closed")*
         ('${tl}'!${taskIdCol}2:${taskIdCol}<>"")
@@ -289,7 +292,11 @@ function setupUpcomingDeadlines(sheet) {
     "✅ Không có task sắp hết hạn"
   )`);
   
-  sheet.getRange("E17:J27").setBorder(true, true, true, true, true, true);
+  sheet.getRange("E17:K27").setBorder(true, true, true, true, true, true);
+  
+  // Thêm alert cho task quá hạn
+  sheet.getRange("E28").setFormula(`=IF(COUNTIFS('${tl}'!${endDateCol}:${endDateCol},"<"&TODAY(),'${tl}'!${statusCol}:${statusCol},"<>Finished",'${tl}'!${statusCol}:${statusCol},"<>Closed",'${tl}'!${taskIdCol}:${taskIdCol},"F*")>0,"🚨 CÓ "&COUNTIFS('${tl}'!${endDateCol}:${endDateCol},"<"&TODAY(),'${tl}'!${statusCol}:${statusCol},"<>Finished",'${tl}'!${statusCol}:${statusCol},"<>Closed",'${tl}'!${taskIdCol}:${taskIdCol},"F*")&" TASK ĐÃ QUÁ HẠN!","")`);
+  sheet.getRange("E28").setFontSize(12).setFontWeight("bold").setFontColor("#d32f2f");
 }
 
 // ==================== ASSIGNEE DETAIL TABLE ====================
