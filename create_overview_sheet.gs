@@ -1,56 +1,59 @@
 /**
  * Google Apps Script để tạo Sheet "Overview" 
- * với thống kê realtime từ Sheet "Task List"
+ * cho Task List của Team Timeline 2601
  * 
  * HƯỚNG DẪN SỬ DỤNG:
- * 1. Mở Google Sheet của bạn
+ * 1. Mở Google Sheet: https://docs.google.com/spreadsheets/d/1N_f8TaqdUu1RKuKSFk0essrEQ95fdUbR5t4mvnsZj8c/edit
  * 2. Vào Extensions → Apps Script
- * 3. Xóa code mặc định và paste toàn bộ code này vào
- * 4. Điều chỉnh CONFIG bên dưới theo cấu trúc sheet của bạn
- * 5. Nhấn nút Run (▶️) và chọn function "createOverviewSheet"
- * 6. Cấp quyền khi được yêu cầu
- * 7. Sheet "Overview" sẽ được tạo tự động!
+ * 3. Xóa code mặc định và paste toàn bộ code này
+ * 4. Nhấn Run (▶️) và chọn function "createOverviewSheet"
+ * 5. Cấp quyền khi được yêu cầu
  */
 
-// ==================== CẤU HÌNH - ĐIỀU CHỈNH THEO SHEET CỦA BẠN ====================
+// ==================== CẤU HÌNH THEO SHEET CỦA BẠN ====================
 const CONFIG = {
-  // Tên sheet chứa danh sách task
   taskListSheetName: "Task List",
-  
-  // Tên sheet overview sẽ được tạo
   overviewSheetName: "Overview",
   
-  // Vị trí các cột trong Task List (điều chỉnh theo thứ tự cột của bạn)
-  // Số thứ tự bắt đầu từ 1 (A=1, B=2, C=3, ...)
+  // Vị trí cột trong Task List (A=1, B=2, ...)
   columns: {
-    taskId: 1,        // Cột A - Task ID
-    taskName: 2,      // Cột B - Tên task
-    description: 3,   // Cột C - Mô tả
-    assignee: 4,      // Cột D - Người được giao
-    status: 5,        // Cột E - Trạng thái
-    priority: 6,      // Cột F - Độ ưu tiên
-    dueDate: 7,       // Cột G - Ngày hết hạn
-    remainingTime: 8, // Cột H - Thời gian còn lại (số ngày hoặc text)
-    startDate: 9      // Cột I - Ngày bắt đầu
+    taskId: 1,         // A - FNo.
+    taskName: 2,       // B - Functional
+    startDate: 3,      // C - Start Date
+    endDate: 4,        // D - End Date
+    remainingTime: 5,  // E - Remaining Time (hh:mm)
+    priority: 6,       // F - Priority
+    status: 7,         // G - Status
+    assignee: 8,       // H - Assignee (MULTIPLE SELECT)
+    tester: 9,         // I - Tester
+    progress: 10,      // J - Progress (%)
+    note: 11           // K - Reference/Note
   },
   
-  // Các giá trị Status
+  // Giá trị Status
   status: {
-    done: ["Finished", "Closed"],           // Các status được coi là "Done"
-    inProgress: ["In Progress"],            // Status "Đang thực hiện"
-    pending: ["To Do", "Open", "Pending"]   // Status "Chờ xử lý"
+    done: ["Finished", "Closed"],
+    inProgress: ["In Progress"],
+    testing: ["Testing"],
+    pending: ["Open", "Pending"]
   },
   
-  // Các giá trị Priority (theo thứ tự từ cao đến thấp)
+  // Giá trị Priority
   priority: {
     urgent: "Urgent",
     high: "High",
-    medium: "Medium",
+    normal: "Normal",
     low: "Low"
   },
   
-  // Số ngày để cảnh báo task sắp hết hạn
-  deadlineWarningDays: 3
+  // Danh sách Assignee (để thống kê chính xác với multiple select)
+  assignees: ["Duy Anh", "Trường", "Đức", "Triều", "Nghĩa", "Hiếu Phạm", "Quyết", "Hiếu Hà", "Tôn"],
+  
+  // Hàng bắt đầu dữ liệu (bỏ qua header)
+  dataStartRow: 3,
+  
+  // Các hàng là header group (Customer Support, BackEnd) - sẽ bỏ qua
+  groupHeaderRows: [3, 23] // Điều chỉnh nếu cần
 };
 
 // ==================== MAIN FUNCTION ====================
@@ -65,297 +68,27 @@ function createOverviewSheet() {
   
   // Tạo sheet Overview mới
   overviewSheet = ss.insertSheet(CONFIG.overviewSheetName);
-  
-  // Di chuyển sheet Overview lên đầu
   ss.setActiveSheet(overviewSheet);
   ss.moveActiveSheet(1);
   
-  // Thiết lập các phần thống kê
+  // Thiết lập các phần
   setupDashboardKPIs(overviewSheet);
   setupStatusStats(overviewSheet);
   setupPriorityStats(overviewSheet);
-  setupAssigneeStats(overviewSheet);
+  setupAssigneeOverview(overviewSheet);
   setupUpcomingDeadlines(overviewSheet);
   setupAssigneeDetailTable(overviewSheet);
   
-  // Format sheet
+  // Format
   formatOverviewSheet(overviewSheet);
   
-  SpreadsheetApp.getUi().alert('✅ Sheet "Overview" đã được tạo thành công!\n\nTất cả dữ liệu sẽ tự động cập nhật khi bạn thay đổi Task List.');
+  // Tạo biểu đồ
+  createCharts(overviewSheet);
+  
+  SpreadsheetApp.getUi().alert('✅ Sheet "Overview" đã được tạo thành công!\n\nDữ liệu sẽ tự động cập nhật realtime khi bạn thay đổi Task List.');
 }
 
-// ==================== DASHBOARD KPIs ====================
-function setupDashboardKPIs(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const statusCol = getColLetter(CONFIG.columns.status);
-  const priorityCol = getColLetter(CONFIG.columns.priority);
-  const remainingCol = getColLetter(CONFIG.columns.remainingTime);
-  
-  const doneStatuses = CONFIG.status.done.map(s => `"${s}"`).join(",");
-  const inProgressStatuses = CONFIG.status.inProgress.map(s => `"${s}"`).join(",");
-  
-  // Header
-  sheet.getRange("A1").setValue("📊 TỔNG QUAN TASK").setFontSize(16).setFontWeight("bold");
-  sheet.getRange("A1:E1").merge().setBackground("#4285f4").setFontColor("white");
-  
-  // KPI Cards
-  const kpis = [
-    ["📋 Tổng Task", `=COUNTA('${taskListName}'!A2:A)`],
-    ["✅ Đã hoàn thành", `=SUMPRODUCT((ISNUMBER(MATCH('${taskListName}'!${statusCol}2:${statusCol},{${doneStatuses}},0)))*1)`],
-    ["🔄 Đang thực hiện", `=COUNTIF('${taskListName}'!${statusCol}:${statusCol},"${CONFIG.status.inProgress[0]}")`],
-    ["⏳ Chờ xử lý", `=A3-B3-C3`],
-    ["🚨 Task Urgent chưa xong", `=COUNTIFS('${taskListName}'!${priorityCol}:${priorityCol},"${CONFIG.priority.urgent}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}")`],
-    ["📈 % Hoàn thành", `=IF(A3>0,B3/A3,0)`]
-  ];
-  
-  sheet.getRange("A2").setValue(kpis[0][0]);
-  sheet.getRange("B2").setValue(kpis[1][0]);
-  sheet.getRange("C2").setValue(kpis[2][0]);
-  sheet.getRange("D2").setValue(kpis[3][0]);
-  sheet.getRange("E2").setValue(kpis[4][0]);
-  sheet.getRange("F2").setValue(kpis[5][0]);
-  
-  sheet.getRange("A3").setFormula(kpis[0][1]);
-  sheet.getRange("B3").setFormula(kpis[1][1]);
-  sheet.getRange("C3").setFormula(kpis[2][1]);
-  sheet.getRange("D3").setFormula(kpis[3][1]);
-  sheet.getRange("E3").setFormula(kpis[4][1]);
-  sheet.getRange("F3").setFormula(kpis[5][1]).setNumberFormat("0.0%");
-  
-  // Style KPI cells
-  sheet.getRange("A2:F2").setBackground("#e8f0fe").setFontWeight("bold");
-  sheet.getRange("A3:F3").setFontSize(18).setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("E3").setFontColor("#ea4335"); // Red for urgent
-}
-
-// ==================== STATUS STATISTICS ====================
-function setupStatusStats(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const statusCol = getColLetter(CONFIG.columns.status);
-  
-  // Header
-  sheet.getRange("A5").setValue("📈 THỐNG KÊ THEO TRẠNG THÁI").setFontSize(14).setFontWeight("bold");
-  sheet.getRange("A5:D5").merge().setBackground("#34a853").setFontColor("white");
-  
-  // Table headers
-  sheet.getRange("A6").setValue("Trạng thái");
-  sheet.getRange("B6").setValue("Số lượng");
-  sheet.getRange("C6").setValue("Phần trăm");
-  sheet.getRange("D6").setValue("Thanh tiến độ");
-  sheet.getRange("A6:D6").setFontWeight("bold").setBackground("#e6f4ea");
-  
-  // Data rows
-  const allStatuses = [...CONFIG.status.done, ...CONFIG.status.inProgress, ...CONFIG.status.pending];
-  let row = 7;
-  
-  allStatuses.forEach(status => {
-    sheet.getRange(row, 1).setValue(status);
-    sheet.getRange(row, 2).setFormula(`=COUNTIF('${taskListName}'!${statusCol}:${statusCol},"${status}")`);
-    sheet.getRange(row, 3).setFormula(`=IF($A$3>0,B${row}/$A$3,0)`).setNumberFormat("0.0%");
-    sheet.getRange(row, 4).setFormula(`=REPT("█",ROUND(C${row}*20))&REPT("░",20-ROUND(C${row}*20))`);
-    row++;
-  });
-  
-  // Total row
-  sheet.getRange(row, 1).setValue("TỔNG").setFontWeight("bold");
-  sheet.getRange(row, 2).setFormula(`=SUM(B7:B${row-1})`).setFontWeight("bold");
-  sheet.getRange(row, 3).setFormula(`=SUM(C7:C${row-1})`).setNumberFormat("0.0%").setFontWeight("bold");
-}
-
-// ==================== PRIORITY STATISTICS ====================
-function setupPriorityStats(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const priorityCol = getColLetter(CONFIG.columns.priority);
-  const statusCol = getColLetter(CONFIG.columns.status);
-  
-  // Header
-  sheet.getRange("F5").setValue("🎯 THỐNG KÊ THEO ĐỘ ƯU TIÊN").setFontSize(14).setFontWeight("bold");
-  sheet.getRange("F5:J5").merge().setBackground("#ea4335").setFontColor("white");
-  
-  // Table headers
-  sheet.getRange("F6").setValue("Độ ưu tiên");
-  sheet.getRange("G6").setValue("Tổng");
-  sheet.getRange("H6").setValue("Chưa xong");
-  sheet.getRange("I6").setValue("Phần trăm");
-  sheet.getRange("J6").setValue("Cảnh báo");
-  sheet.getRange("F6:J6").setFontWeight("bold").setBackground("#fce8e6");
-  
-  const priorities = [
-    [CONFIG.priority.urgent, "🔴"],
-    [CONFIG.priority.high, "🟠"],
-    [CONFIG.priority.medium, "🟡"],
-    [CONFIG.priority.low, "🟢"]
-  ];
-  
-  let row = 7;
-  priorities.forEach(([priority, icon]) => {
-    const doneConditions = CONFIG.status.done.map(s => `'${taskListName}'!${statusCol}:${statusCol},"<>${s}"`).join(",");
-    
-    sheet.getRange(row, 6).setValue(`${icon} ${priority}`);
-    sheet.getRange(row, 7).setFormula(`=COUNTIF('${taskListName}'!${priorityCol}:${priorityCol},"${priority}")`);
-    sheet.getRange(row, 8).setFormula(`=COUNTIFS('${taskListName}'!${priorityCol}:${priorityCol},"${priority}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}")`);
-    sheet.getRange(row, 9).setFormula(`=IF($A$3>0,G${row}/$A$3,0)`).setNumberFormat("0.0%");
-    sheet.getRange(row, 10).setFormula(`=IF(H${row}>0,"⚠️ "&H${row}&" task cần xử lý","")`);
-    row++;
-  });
-  
-  // Total row
-  sheet.getRange(row, 6).setValue("TỔNG").setFontWeight("bold");
-  sheet.getRange(row, 7).setFormula(`=SUM(G7:G${row-1})`).setFontWeight("bold");
-  sheet.getRange(row, 8).setFormula(`=SUM(H7:H${row-1})`).setFontWeight("bold");
-  sheet.getRange(row, 9).setFormula(`=SUM(I7:I${row-1})`).setNumberFormat("0.0%").setFontWeight("bold");
-}
-
-// ==================== ASSIGNEE STATISTICS ====================
-function setupAssigneeStats(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const assigneeCol = getColLetter(CONFIG.columns.assignee);
-  
-  // Header
-  sheet.getRange("A14").setValue("👥 THỐNG KÊ THEO NGƯỜI THỰC HIỆN").setFontSize(14).setFontWeight("bold");
-  sheet.getRange("A14:B14").merge().setBackground("#fbbc04").setFontColor("white");
-  
-  // Dùng QUERY để lấy danh sách unique assignees và đếm
-  sheet.getRange("A15").setValue("Assignee");
-  sheet.getRange("B15").setValue("Số Task");
-  sheet.getRange("A15:B15").setFontWeight("bold").setBackground("#fef7e0");
-  
-  // Query để lấy thống kê
-  sheet.getRange("A16").setFormula(`=IFERROR(QUERY('${taskListName}'!${assigneeCol}2:${assigneeCol},"SELECT ${assigneeCol}, COUNT(${assigneeCol}) WHERE ${assigneeCol} IS NOT NULL GROUP BY ${assigneeCol} ORDER BY COUNT(${assigneeCol}) DESC LABEL COUNT(${assigneeCol}) ''"),"")`);
-}
-
-// ==================== UPCOMING DEADLINES ====================
-function setupUpcomingDeadlines(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const taskNameCol = getColLetter(CONFIG.columns.taskName);
-  const assigneeCol = getColLetter(CONFIG.columns.assignee);
-  const statusCol = getColLetter(CONFIG.columns.status);
-  const priorityCol = getColLetter(CONFIG.columns.priority);
-  const dueDateCol = getColLetter(CONFIG.columns.dueDate);
-  const remainingCol = getColLetter(CONFIG.columns.remainingTime);
-  
-  // Header
-  sheet.getRange("D14").setValue(`⏰ TASK SẮP HẾT HẠN (trong ${CONFIG.deadlineWarningDays} ngày)`).setFontSize(14).setFontWeight("bold");
-  sheet.getRange("D14:I14").merge().setBackground("#ea4335").setFontColor("white");
-  
-  // Table headers
-  sheet.getRange("D15").setValue("Task Name");
-  sheet.getRange("E15").setValue("Assignee");
-  sheet.getRange("F15").setValue("Priority");
-  sheet.getRange("G15").setValue("Due Date");
-  sheet.getRange("H15").setValue("Còn lại");
-  sheet.getRange("I15").setValue("Status");
-  sheet.getRange("D15:I15").setFontWeight("bold").setBackground("#fce8e6");
-  
-  // Filter formula - lọc task sắp hết hạn
-  // Giả sử Remaining Time là số ngày
-  sheet.getRange("D16").setFormula(`=IFERROR(FILTER({'${taskListName}'!${taskNameCol}2:${taskNameCol},'${taskListName}'!${assigneeCol}2:${assigneeCol},'${taskListName}'!${priorityCol}2:${priorityCol},'${taskListName}'!${dueDateCol}2:${dueDateCol},'${taskListName}'!${remainingCol}2:${remainingCol},'${taskListName}'!${statusCol}2:${statusCol}},('${taskListName}'!${remainingCol}2:${remainingCol}<=${CONFIG.deadlineWarningDays})*('${taskListName}'!${remainingCol}2:${remainingCol}>=-1)*('${taskListName}'!${statusCol}2:${statusCol}<>"${CONFIG.status.done[0]}")*('${taskListName}'!${statusCol}2:${statusCol}<>"${CONFIG.status.done[1]}")),"✅ Không có task sắp hết hạn")`);
-}
-
-// ==================== ASSIGNEE DETAIL TABLE ====================
-function setupAssigneeDetailTable(sheet) {
-  const taskListName = CONFIG.taskListSheetName;
-  const taskNameCol = getColLetter(CONFIG.columns.taskName);
-  const assigneeCol = getColLetter(CONFIG.columns.assignee);
-  const statusCol = getColLetter(CONFIG.columns.status);
-  const priorityCol = getColLetter(CONFIG.columns.priority);
-  
-  // Header
-  sheet.getRange("A28").setValue("📋 BẢNG CHI TIẾT THEO NGƯỜI THỰC HIỆN").setFontSize(14).setFontWeight("bold");
-  sheet.getRange("A28:K28").merge().setBackground("#9c27b0").setFontColor("white");
-  
-  // Table headers
-  const headers = [
-    "Assignee", "Tổng Task", "✅ Done", "🔄 In Progress", "⏳ Pending",
-    "🔴 Urgent", "🟠 High", "🟡 Medium", "🟢 Low", "📝 Task đang làm"
-  ];
-  
-  headers.forEach((header, i) => {
-    sheet.getRange(29, i + 1).setValue(header);
-  });
-  sheet.getRange("A29:J29").setFontWeight("bold").setBackground("#f3e5f5");
-  
-  // Get unique assignees formula
-  sheet.getRange("A30").setFormula(`=IFERROR(UNIQUE(FILTER('${taskListName}'!${assigneeCol}2:${assigneeCol},'${taskListName}'!${assigneeCol}2:${assigneeCol}<>"")),"Không có dữ liệu")`);
-  
-  // Công thức cho các cột khác (sẽ được áp dụng cho từng dòng)
-  // Giả sử có tối đa 20 assignees
-  for (let row = 30; row <= 49; row++) {
-    // Tổng Task
-    sheet.getRange(row, 2).setFormula(`=IF(A${row}<>"",COUNTIF('${taskListName}'!${assigneeCol}:${assigneeCol},A${row}),"")`);
-    
-    // Done (Finished + Closed)
-    sheet.getRange(row, 3).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${statusCol}:${statusCol},"${CONFIG.status.done[0]}")+COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${statusCol}:${statusCol},"${CONFIG.status.done[1]}"),"")`);
-    
-    // In Progress
-    sheet.getRange(row, 4).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${statusCol}:${statusCol},"${CONFIG.status.inProgress[0]}"),"")`);
-    
-    // Pending
-    sheet.getRange(row, 5).setFormula(`=IF(A${row}<>"",B${row}-C${row}-D${row},"")`);
-    
-    // Urgent
-    sheet.getRange(row, 6).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${priorityCol}:${priorityCol},"${CONFIG.priority.urgent}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}"),"")`);
-    
-    // High
-    sheet.getRange(row, 7).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${priorityCol}:${priorityCol},"${CONFIG.priority.high}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}"),"")`);
-    
-    // Medium
-    sheet.getRange(row, 8).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${priorityCol}:${priorityCol},"${CONFIG.priority.medium}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}"),"")`);
-    
-    // Low
-    sheet.getRange(row, 9).setFormula(`=IF(A${row}<>"",COUNTIFS('${taskListName}'!${assigneeCol}:${assigneeCol},A${row},'${taskListName}'!${priorityCol}:${priorityCol},"${CONFIG.priority.low}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[0]}",'${taskListName}'!${statusCol}:${statusCol},"<>${CONFIG.status.done[1]}"),"")`);
-    
-    // Task đang làm
-    sheet.getRange(row, 10).setFormula(`=IF(A${row}<>"",IFERROR(TEXTJOIN(", ",TRUE,FILTER('${taskListName}'!${taskNameCol}:${taskNameCol},('${taskListName}'!${assigneeCol}:${assigneeCol}=A${row})*('${taskListName}'!${statusCol}:${statusCol}="${CONFIG.status.inProgress[0]}"))),"Không có"),"")`);
-  }
-}
-
-// ==================== FORMATTING ====================
-function formatOverviewSheet(sheet) {
-  // Set column widths
-  sheet.setColumnWidth(1, 150);  // A
-  sheet.setColumnWidth(2, 100);  // B
-  sheet.setColumnWidth(3, 100);  // C
-  sheet.setColumnWidth(4, 150);  // D
-  sheet.setColumnWidth(5, 120);  // E
-  sheet.setColumnWidth(6, 120);  // F
-  sheet.setColumnWidth(7, 80);   // G
-  sheet.setColumnWidth(8, 100);  // H
-  sheet.setColumnWidth(9, 80);   // I
-  sheet.setColumnWidth(10, 300); // J - Task đang làm
-  
-  // Freeze first row
-  sheet.setFrozenRows(1);
-  
-  // Add conditional formatting for urgent tasks
-  const urgentRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("Urgent")
-    .setBackground("#ffcdd2")
-    .setRanges([sheet.getRange("F7:F10"), sheet.getRange("F30:F49")])
-    .build();
-  
-  // Add conditional formatting for high priority
-  const highRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("High")
-    .setBackground("#ffe0b2")
-    .setRanges([sheet.getRange("F7:F10"), sheet.getRange("F30:F49")])
-    .build();
-  
-  // Apply rules
-  const rules = sheet.getConditionalFormatRules();
-  rules.push(urgentRule);
-  rules.push(highRule);
-  sheet.setConditionalFormatRules(rules);
-  
-  // Add borders
-  sheet.getRange("A6:D12").setBorder(true, true, true, true, true, true);
-  sheet.getRange("F6:J11").setBorder(true, true, true, true, true, true);
-  sheet.getRange("A15:B25").setBorder(true, true, true, true, true, true);
-  sheet.getRange("D15:I25").setBorder(true, true, true, true, true, true);
-  sheet.getRange("A29:J49").setBorder(true, true, true, true, true, true);
-}
-
-// ==================== HELPER FUNCTIONS ====================
+// ==================== HELPER: Get column letter ====================
 function getColLetter(colNum) {
   let letter = '';
   while (colNum > 0) {
@@ -366,72 +99,398 @@ function getColLetter(colNum) {
   return letter;
 }
 
+// ==================== DASHBOARD KPIs ====================
+function setupDashboardKPIs(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const statusCol = getColLetter(CONFIG.columns.status);
+  const priorityCol = getColLetter(CONFIG.columns.priority);
+  const taskIdCol = getColLetter(CONFIG.columns.taskId);
+  
+  // Title
+  sheet.getRange("A1").setValue("📊 TASK OVERVIEW - TIMELINE 2601").setFontSize(18).setFontWeight("bold");
+  sheet.getRange("A1:J1").merge().setBackground("#1a73e8").setFontColor("white").setHorizontalAlignment("center");
+  
+  // KPI Row
+  sheet.getRange("A3").setValue("📋 Tổng Task");
+  sheet.getRange("B3").setValue("✅ Hoàn thành");
+  sheet.getRange("C3").setValue("🔄 Đang làm");
+  sheet.getRange("D3").setValue("🧪 Testing");
+  sheet.getRange("E3").setValue("⏳ Chờ xử lý");
+  sheet.getRange("F3").setValue("🚨 Urgent");
+  sheet.getRange("G3").setValue("📈 % Hoàn thành");
+  sheet.getRange("A3:G3").setFontWeight("bold").setBackground("#e8f0fe").setHorizontalAlignment("center");
+  
+  // KPI Values - Đếm task có FNo. không rỗng và không phải header group
+  sheet.getRange("A4").setFormula(`=COUNTIF('${tl}'!${taskIdCol}:${taskIdCol},"F*")`);
+  sheet.getRange("B4").setFormula(`=COUNTIFS('${tl}'!${statusCol}:${statusCol},"Finished")+COUNTIFS('${tl}'!${statusCol}:${statusCol},"Closed")`);
+  sheet.getRange("C4").setFormula(`=COUNTIF('${tl}'!${statusCol}:${statusCol},"In Progress")`);
+  sheet.getRange("D4").setFormula(`=COUNTIF('${tl}'!${statusCol}:${statusCol},"Testing")`);
+  sheet.getRange("E4").setFormula(`=COUNTIF('${tl}'!${statusCol}:${statusCol},"Open")+COUNTIF('${tl}'!${statusCol}:${statusCol},"Pending")`);
+  sheet.getRange("F4").setFormula(`=COUNTIFS('${tl}'!${priorityCol}:${priorityCol},"Urgent",'${tl}'!${statusCol}:${statusCol},"<>Finished",'${tl}'!${statusCol}:${statusCol},"<>Closed")`);
+  sheet.getRange("G4").setFormula(`=IF(A4>0,B4/A4,0)`);
+  
+  // Format
+  sheet.getRange("A4:F4").setFontSize(24).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("G4").setFontSize(24).setFontWeight("bold").setHorizontalAlignment("center").setNumberFormat("0.0%");
+  sheet.getRange("F4").setFontColor("#d93025"); // Red for urgent
+  sheet.getRange("B4").setFontColor("#1e8e3e"); // Green for done
+  sheet.getRange("A3:G4").setBorder(true, true, true, true, true, true);
+}
+
+// ==================== STATUS STATISTICS ====================
+function setupStatusStats(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const statusCol = getColLetter(CONFIG.columns.status);
+  
+  // Header
+  sheet.getRange("A6").setValue("📈 THỐNG KÊ THEO TRẠNG THÁI").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("A6:D6").merge().setBackground("#34a853").setFontColor("white");
+  
+  // Table headers
+  const headers = ["Trạng thái", "Số lượng", "Phần trăm", "Biểu đồ"];
+  headers.forEach((h, i) => sheet.getRange(7, i + 1).setValue(h));
+  sheet.getRange("A7:D7").setFontWeight("bold").setBackground("#e6f4ea");
+  
+  // Status data
+  const statuses = [
+    ["🟢 Open", "Open"],
+    ["🟡 Pending", "Pending"],
+    ["🔵 In Progress", "In Progress"],
+    ["🟣 Testing", "Testing"],
+    ["✅ Finished", "Finished"],
+    ["⬛ Closed", "Closed"]
+  ];
+  
+  statuses.forEach((status, i) => {
+    const row = 8 + i;
+    sheet.getRange(row, 1).setValue(status[0]);
+    sheet.getRange(row, 2).setFormula(`=COUNTIF('${tl}'!${statusCol}:${statusCol},"${status[1]}")`);
+    sheet.getRange(row, 3).setFormula(`=IF($A$4>0,B${row}/$A$4,0)`).setNumberFormat("0.0%");
+    sheet.getRange(row, 4).setFormula(`=REPT("█",ROUND(C${row}*20))&REPT("░",20-ROUND(C${row}*20))`).setFontSize(8);
+  });
+  
+  // Total
+  const totalRow = 8 + statuses.length;
+  sheet.getRange(totalRow, 1).setValue("TỔNG").setFontWeight("bold");
+  sheet.getRange(totalRow, 2).setFormula(`=SUM(B8:B${totalRow-1})`).setFontWeight("bold");
+  sheet.getRange(totalRow, 3).setValue("100%").setFontWeight("bold");
+  
+  sheet.getRange(`A7:D${totalRow}`).setBorder(true, true, true, true, true, true);
+}
+
+// ==================== PRIORITY STATISTICS ====================
+function setupPriorityStats(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const priorityCol = getColLetter(CONFIG.columns.priority);
+  const statusCol = getColLetter(CONFIG.columns.status);
+  
+  // Header
+  sheet.getRange("F6").setValue("🎯 THỐNG KÊ THEO ĐỘ ƯU TIÊN").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("F6:J6").merge().setBackground("#ea4335").setFontColor("white");
+  
+  // Table headers
+  sheet.getRange("F7").setValue("Độ ưu tiên");
+  sheet.getRange("G7").setValue("Tổng");
+  sheet.getRange("H7").setValue("Chưa xong");
+  sheet.getRange("I7").setValue("Phần trăm");
+  sheet.getRange("J7").setValue("⚠️ Cảnh báo");
+  sheet.getRange("F7:J7").setFontWeight("bold").setBackground("#fce8e6");
+  
+  // Priority data
+  const priorities = [
+    ["🔴 Urgent", "Urgent", "#ffcdd2"],
+    ["🟠 High", "High", "#ffe0b2"],
+    ["🟡 Normal", "Normal", "#fff9c4"],
+    ["🟢 Low", "Low", "#c8e6c9"]
+  ];
+  
+  priorities.forEach((p, i) => {
+    const row = 8 + i;
+    sheet.getRange(row, 6).setValue(p[0]).setBackground(p[2]);
+    sheet.getRange(row, 7).setFormula(`=COUNTIF('${tl}'!${priorityCol}:${priorityCol},"${p[1]}")`);
+    sheet.getRange(row, 8).setFormula(`=COUNTIFS('${tl}'!${priorityCol}:${priorityCol},"${p[1]}",'${tl}'!${statusCol}:${statusCol},"<>Finished",'${tl}'!${statusCol}:${statusCol},"<>Closed")`);
+    sheet.getRange(row, 9).setFormula(`=IF($A$4>0,G${row}/$A$4,0)`).setNumberFormat("0.0%");
+    sheet.getRange(row, 10).setFormula(`=IF(H${row}>0,"⚠️ Cần xử lý "&H${row}&" task","")`);
+  });
+  
+  // Total
+  sheet.getRange(12, 6).setValue("TỔNG").setFontWeight("bold");
+  sheet.getRange(12, 7).setFormula("=SUM(G8:G11)").setFontWeight("bold");
+  sheet.getRange(12, 8).setFormula("=SUM(H8:H11)").setFontWeight("bold");
+  
+  sheet.getRange("F7:J12").setBorder(true, true, true, true, true, true);
+}
+
+// ==================== ASSIGNEE OVERVIEW (với Multiple Select) ====================
+function setupAssigneeOverview(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const assigneeCol = getColLetter(CONFIG.columns.assignee);
+  
+  // Header
+  sheet.getRange("A16").setValue("👥 THỐNG KÊ THEO NGƯỜI THỰC HIỆN").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("A16:C16").merge().setBackground("#9c27b0").setFontColor("white");
+  
+  // Table headers
+  sheet.getRange("A17").setValue("Assignee");
+  sheet.getRange("B17").setValue("Số Task");
+  sheet.getRange("C17").setValue("Biểu đồ");
+  sheet.getRange("A17:C17").setFontWeight("bold").setBackground("#f3e5f5");
+  
+  // Assignee data - dùng REGEXMATCH để đếm vì là multiple select
+  CONFIG.assignees.forEach((assignee, i) => {
+    const row = 18 + i;
+    sheet.getRange(row, 1).setValue(assignee);
+    // Dùng SUMPRODUCT với REGEXMATCH để đếm task chứa tên assignee
+    sheet.getRange(row, 2).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*1)`);
+    sheet.getRange(row, 3).setFormula(`=REPT("█",B${row})&" ("&B${row}&")")`).setFontSize(9);
+  });
+  
+  const endRow = 17 + CONFIG.assignees.length;
+  sheet.getRange(`A17:C${endRow}`).setBorder(true, true, true, true, true, true);
+}
+
+// ==================== UPCOMING DEADLINES ====================
+function setupUpcomingDeadlines(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const taskNameCol = getColLetter(CONFIG.columns.taskName);
+  const assigneeCol = getColLetter(CONFIG.columns.assignee);
+  const statusCol = getColLetter(CONFIG.columns.status);
+  const priorityCol = getColLetter(CONFIG.columns.priority);
+  const endDateCol = getColLetter(CONFIG.columns.endDate);
+  const remainingCol = getColLetter(CONFIG.columns.remainingTime);
+  const taskIdCol = getColLetter(CONFIG.columns.taskId);
+  
+  // Header
+  sheet.getRange("E16").setValue("⏰ TASK SẮP/QUÁ HẾT HẠN").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("E16:J16").merge().setBackground("#f57c00").setFontColor("white");
+  
+  // Table headers
+  sheet.getRange("E17").setValue("FNo.");
+  sheet.getRange("F17").setValue("Task Name");
+  sheet.getRange("G17").setValue("Assignee");
+  sheet.getRange("H17").setValue("Priority");
+  sheet.getRange("I17").setValue("End Date");
+  sheet.getRange("J17").setValue("Status");
+  sheet.getRange("E17:J17").setFontWeight("bold").setBackground("#fff3e0");
+  
+  // Filter - lọc task chưa xong và sắp hết hạn (End Date trong 7 ngày tới hoặc đã qua)
+  sheet.getRange("E18").setFormula(`=IFERROR(
+    SORT(
+      FILTER(
+        {'${tl}'!${taskIdCol}2:${taskIdCol},'${tl}'!${taskNameCol}2:${taskNameCol},'${tl}'!${assigneeCol}2:${assigneeCol},'${tl}'!${priorityCol}2:${priorityCol},'${tl}'!${endDateCol}2:${endDateCol},'${tl}'!${statusCol}2:${statusCol}},
+        ('${tl}'!${endDateCol}2:${endDateCol}<>"")*
+        ('${tl}'!${endDateCol}2:${endDateCol}<=TODAY()+7)*
+        ('${tl}'!${statusCol}2:${statusCol}<>"Finished")*
+        ('${tl}'!${statusCol}2:${statusCol}<>"Closed")*
+        ('${tl}'!${taskIdCol}2:${taskIdCol}<>"")
+      ),
+      5, TRUE
+    ),
+    "✅ Không có task sắp hết hạn"
+  )`);
+  
+  sheet.getRange("E17:J27").setBorder(true, true, true, true, true, true);
+}
+
+// ==================== ASSIGNEE DETAIL TABLE ====================
+function setupAssigneeDetailTable(sheet) {
+  const tl = CONFIG.taskListSheetName;
+  const taskNameCol = getColLetter(CONFIG.columns.taskName);
+  const assigneeCol = getColLetter(CONFIG.columns.assignee);
+  const statusCol = getColLetter(CONFIG.columns.status);
+  const priorityCol = getColLetter(CONFIG.columns.priority);
+  const taskIdCol = getColLetter(CONFIG.columns.taskId);
+  
+  // Header
+  sheet.getRange("A30").setValue("📋 CHI TIẾT THEO TỪNG NGƯỜI - PHÂN TÍCH WORKLOAD").setFontSize(12).setFontWeight("bold");
+  sheet.getRange("A30:L30").merge().setBackground("#1565c0").setFontColor("white");
+  
+  // Table headers
+  const headers = [
+    "Assignee", "Tổng Task", "✅ Done", "🔄 In Progress", "🧪 Testing", 
+    "⏳ Pending", "🔴 Urgent", "🟠 High", "🟡 Normal", "🟢 Low", "📝 Task đang làm"
+  ];
+  headers.forEach((h, i) => sheet.getRange(31, i + 1).setValue(h));
+  sheet.getRange("A31:K31").setFontWeight("bold").setBackground("#e3f2fd");
+  
+  // Data rows for each assignee
+  CONFIG.assignees.forEach((assignee, i) => {
+    const row = 32 + i;
+    
+    // Assignee name
+    sheet.getRange(row, 1).setValue(assignee);
+    
+    // Tổng Task (multiple select - dùng REGEXMATCH)
+    sheet.getRange(row, 2).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*1)`);
+    
+    // Done (Finished + Closed)
+    sheet.getRange(row, 3).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${statusCol}:${statusCol}="Finished")*1)+SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${statusCol}:${statusCol}="Closed")*1)`);
+    
+    // In Progress
+    sheet.getRange(row, 4).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${statusCol}:${statusCol}="In Progress")*1)`);
+    
+    // Testing
+    sheet.getRange(row, 5).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${statusCol}:${statusCol}="Testing")*1)`);
+    
+    // Pending (Open + Pending)
+    sheet.getRange(row, 6).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*(('${tl}'!${statusCol}:${statusCol}="Open")+('${tl}'!${statusCol}:${statusCol}="Pending"))*1)`);
+    
+    // Urgent (chưa xong)
+    sheet.getRange(row, 7).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${priorityCol}:${priorityCol}="Urgent")*('${tl}'!${statusCol}:${statusCol}<>"Finished")*('${tl}'!${statusCol}:${statusCol}<>"Closed")*1)`);
+    
+    // High (chưa xong)
+    sheet.getRange(row, 8).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${priorityCol}:${priorityCol}="High")*('${tl}'!${statusCol}:${statusCol}<>"Finished")*('${tl}'!${statusCol}:${statusCol}<>"Closed")*1)`);
+    
+    // Normal (chưa xong)
+    sheet.getRange(row, 9).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${priorityCol}:${priorityCol}="Normal")*('${tl}'!${statusCol}:${statusCol}<>"Finished")*('${tl}'!${statusCol}:${statusCol}<>"Closed")*1)`);
+    
+    // Low (chưa xong)
+    sheet.getRange(row, 10).setFormula(`=SUMPRODUCT(REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${priorityCol}:${priorityCol}="Low")*('${tl}'!${statusCol}:${statusCol}<>"Finished")*('${tl}'!${statusCol}:${statusCol}<>"Closed")*1)`);
+    
+    // Task đang làm (In Progress)
+    sheet.getRange(row, 11).setFormula(`=IFERROR(TEXTJOIN(", ",TRUE,FILTER('${tl}'!${taskIdCol}:${taskIdCol}&": "&'${tl}'!${taskNameCol}:${taskNameCol},REGEXMATCH('${tl}'!${assigneeCol}:${assigneeCol},"(?i).*${assignee}.*")*('${tl}'!${statusCol}:${statusCol}="In Progress"))),"Không có")`);
+  });
+  
+  const endRow = 31 + CONFIG.assignees.length;
+  
+  // Conditional formatting cho Urgent
+  CONFIG.assignees.forEach((_, i) => {
+    const row = 32 + i;
+    sheet.getRange(row, 7).setFormula(sheet.getRange(row, 7).getFormula()); // Keep formula
+  });
+  
+  // Total row
+  sheet.getRange(endRow + 1, 1).setValue("TỔNG").setFontWeight("bold");
+  for (let col = 2; col <= 10; col++) {
+    sheet.getRange(endRow + 1, col).setFormula(`=SUM(${getColLetter(col)}32:${getColLetter(col)}${endRow})`).setFontWeight("bold");
+  }
+  
+  sheet.getRange(`A31:K${endRow + 1}`).setBorder(true, true, true, true, true, true);
+  
+  // Thêm conditional formatting cho cột Urgent
+  const urgentRange = sheet.getRange(`G32:G${endRow}`);
+  const rule = SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberGreaterThan(0)
+    .setBackground("#ffcdd2")
+    .setFontColor("#c62828")
+    .setRanges([urgentRange])
+    .build();
+  
+  const highRange = sheet.getRange(`H32:H${endRow}`);
+  const rule2 = SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberGreaterThan(0)
+    .setBackground("#ffe0b2")
+    .setFontColor("#e65100")
+    .setRanges([highRange])
+    .build();
+  
+  sheet.setConditionalFormatRules([rule, rule2]);
+}
+
+// ==================== FORMATTING ====================
+function formatOverviewSheet(sheet) {
+  // Set column widths
+  sheet.setColumnWidth(1, 120);
+  sheet.setColumnWidth(2, 90);
+  sheet.setColumnWidth(3, 90);
+  sheet.setColumnWidth(4, 100);
+  sheet.setColumnWidth(5, 90);
+  sheet.setColumnWidth(6, 150);
+  sheet.setColumnWidth(7, 90);
+  sheet.setColumnWidth(8, 90);
+  sheet.setColumnWidth(9, 90);
+  sheet.setColumnWidth(10, 90);
+  sheet.setColumnWidth(11, 350);
+  
+  // Freeze rows
+  sheet.setFrozenRows(2);
+  
+  // Set default font
+  sheet.getRange("A1:K100").setFontFamily("Arial");
+}
+
+// ==================== TẠO BIỂU ĐỒ ====================
+function createCharts(sheet) {
+  // Biểu đồ tròn Status
+  const statusChart = sheet.newChart()
+    .setChartType(Charts.ChartType.PIE)
+    .addRange(sheet.getRange("A8:B13"))
+    .setPosition(6, 12, 0, 0)
+    .setOption('title', '📈 Phân bổ theo Trạng thái')
+    .setOption('pieHole', 0.4)
+    .setOption('width', 380)
+    .setOption('height', 280)
+    .setOption('legend', {position: 'right'})
+    .setOption('colors', ['#4caf50', '#ffeb3b', '#2196f3', '#9c27b0', '#8bc34a', '#607d8b'])
+    .build();
+  sheet.insertChart(statusChart);
+  
+  // Biểu đồ cột Priority
+  const priorityChart = sheet.newChart()
+    .setChartType(Charts.ChartType.COLUMN)
+    .addRange(sheet.getRange("F8:H11"))
+    .setPosition(16, 12, 0, 0)
+    .setOption('title', '🎯 Task theo Độ ưu tiên')
+    .setOption('width', 380)
+    .setOption('height', 280)
+    .setOption('legend', {position: 'top'})
+    .setOption('colors', ['#9e9e9e', '#f44336'])
+    .setOption('hAxis', {title: 'Priority'})
+    .setOption('vAxis', {title: 'Số lượng'})
+    .build();
+  sheet.insertChart(priorityChart);
+}
+
 // ==================== MENU ====================
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('📊 Task Overview')
-    .addItem('🔄 Tạo/Cập nhật Overview Sheet', 'createOverviewSheet')
+  SpreadsheetApp.getUi().createMenu('📊 Task Overview')
+    .addItem('🔄 Tạo/Cập nhật Overview', 'createOverviewSheet')
+    .addItem('📈 Chỉ cập nhật biểu đồ', 'updateChartsOnly')
+    .addSeparator()
     .addItem('ℹ️ Hướng dẫn', 'showHelp')
     .addToUi();
 }
 
-function showHelp() {
-  const htmlOutput = HtmlService.createHtmlOutput(`
-    <h2>📊 Hướng dẫn sử dụng Task Overview</h2>
-    <h3>Bước 1: Cấu hình</h3>
-    <p>Mở Apps Script (Extensions → Apps Script) và điều chỉnh phần CONFIG theo cấu trúc sheet của bạn:</p>
-    <ul>
-      <li><b>taskListSheetName:</b> Tên sheet chứa danh sách task</li>
-      <li><b>columns:</b> Vị trí các cột (A=1, B=2, ...)</li>
-      <li><b>status:</b> Các giá trị trạng thái</li>
-      <li><b>priority:</b> Các giá trị độ ưu tiên</li>
-    </ul>
-    <h3>Bước 2: Chạy Script</h3>
-    <p>Click menu "📊 Task Overview" → "🔄 Tạo/Cập nhật Overview Sheet"</p>
-    <h3>Lưu ý</h3>
-    <p>- Dữ liệu sẽ tự động cập nhật realtime<br>
-    - Chạy lại script nếu muốn reset layout</p>
-  `)
-    .setWidth(500)
-    .setHeight(400);
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Hướng dẫn');
-}
-
-// ==================== TẠO BIỂU ĐỒ ====================
-function createCharts() {
+function updateChartsOnly() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.overviewSheetName);
-  
   if (!sheet) {
-    SpreadsheetApp.getUi().alert('Vui lòng chạy "Tạo Overview Sheet" trước!');
+    SpreadsheetApp.getUi().alert('Vui lòng tạo Overview Sheet trước!');
     return;
   }
   
   // Xóa charts cũ
-  const charts = sheet.getCharts();
-  charts.forEach(chart => sheet.removeChart(chart));
+  sheet.getCharts().forEach(c => sheet.removeChart(c));
   
-  // Biểu đồ tròn cho Status (A6:C11)
-  const statusChart = sheet.newChart()
-    .setChartType(Charts.ChartType.PIE)
-    .addRange(sheet.getRange("A7:B11"))
-    .setPosition(5, 12, 0, 0)
-    .setOption('title', 'Phân bổ theo Trạng thái')
-    .setOption('pieHole', 0.4)
-    .setOption('width', 400)
-    .setOption('height', 300)
-    .build();
-  sheet.insertChart(statusChart);
-  
-  // Biểu đồ cột cho Priority
-  const priorityChart = sheet.newChart()
-    .setChartType(Charts.ChartType.COLUMN)
-    .addRange(sheet.getRange("F7:H10"))
-    .setPosition(14, 12, 0, 0)
-    .setOption('title', 'Task theo Độ ưu tiên')
-    .setOption('width', 400)
-    .setOption('height', 300)
-    .setOption('colors', ['#ea4335', '#fbbc04'])
-    .build();
-  sheet.insertChart(priorityChart);
+  // Tạo lại
+  createCharts(sheet);
+  SpreadsheetApp.getUi().alert('Đã cập nhật biểu đồ!');
+}
+
+function showHelp() {
+  const html = HtmlService.createHtmlOutput(`
+    <div style="font-family: Arial; padding: 15px;">
+      <h2>📊 Task Overview - Hướng dẫn</h2>
+      
+      <h3>🔹 Tính năng</h3>
+      <ul>
+        <li><b>KPI Dashboard:</b> Tổng quan số task, % hoàn thành</li>
+        <li><b>Thống kê Status:</b> Biểu đồ tròn theo trạng thái</li>
+        <li><b>Thống kê Priority:</b> Biểu đồ cột theo độ ưu tiên</li>
+        <li><b>Workload Assignee:</b> Phân tích task từng người</li>
+        <li><b>Task đang làm:</b> Hiển thị task In Progress của mỗi người</li>
+        <li><b>Deadline Alert:</b> Danh sách task sắp hết hạn</li>
+      </ul>
+      
+      <h3>🔹 Lưu ý Multiple Select</h3>
+      <p>Script đã được tối ưu để đếm chính xác khi 1 task có nhiều Assignee.</p>
+      
+      <h3>🔹 Cập nhật dữ liệu</h3>
+      <p>Dữ liệu tự động cập nhật realtime khi thay đổi Task List.</p>
+      
+      <h3>🔹 Thêm Assignee mới</h3>
+      <p>Vào Apps Script, thêm tên vào mảng <code>assignees</code> trong CONFIG.</p>
+    </div>
+  `).setWidth(450).setHeight(400);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Hướng dẫn sử dụng');
 }
